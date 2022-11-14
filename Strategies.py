@@ -121,18 +121,102 @@ class TradingEMA(TradingSMA):
         self.slow_ma = self.equity.prices.ewm(span=self.slow_window, adjust=False).mean()
 
 
+class TradingMACD:
+    def __init__(self, equity, fast_window=12, slow_window=26, macd_window=9):
+        self.equity = equity
+        self.fast_window = fast_window
+        self.slow_window = slow_window
+        self.macd_window = macd_window
+
+        self.macd_line = self.equity.prices.ewm(span=self.fast_window, adjust=False).mean() - \
+                         self.equity.prices.ewm(span=self.slow_window, adjust=False).mean()
+
+        self.sig_line = self.macd_line.ewm(span=self.macd_window, adjust=False).mean()
+
+    def buy_sell(self):
+
+        # Buy if MACD line crosses Signal Line from below
+        # Sell if MACD line crosses SIgnal Line from above
+        buy_sell = np.sign(self.macd_line - self.sig_line)
+        buy_sell = buy_sell.mask(buy_sell == buy_sell.shift(1), 0)
+        buy_sell[1] = 0
+
+        # Shift back one time period for when signal can be acted upon
+        buy_sell = buy_sell.shift(1)
+
+        return buy_sell
+
+    def pnl(self, show=True):
+
+        trades = self.buy_sell()
+        output = trades.multiply(self.equity.prices.multiply(-1))
+        output = output.mask(output.isna(), 0)
+        output = output.cumsum()
+
+        # Close out our position at the end of the period
+        final_position = trades.cumsum()[-1] * self.equity.prices[-1]
+        output[-1] = output[-1] + final_position
+
+        if show:
+            plt.style.use('fivethirtyeight')
+            plt.plot_date(output.index, output, linestyle='solid', marker="")
+            plt.title('Profit and Loss')
+            plt.ylabel('Dollars')
+            plt.tight_layout()
+            plt.gcf().autofmt_xdate()
+            plt.show()
+
+        return output[-1]
+
+    def trade_plot(self):
+
+        buy_trades = self.buy_sell()
+        sell_trades = buy_trades
+
+        buy_trades = buy_trades.mask(buy_trades != 1, None)
+        buy_trades = buy_trades.multiply(self.equity.prices)
+
+        sell_trades = sell_trades.mask(sell_trades != -1, None)
+        sell_trades = sell_trades.multiply(self.equity.prices.multiply(-1))
+
+        plt.style.use('fivethirtyeight')
+
+        fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, sharex=True)
+
+        ax1.plot_date(self.equity.prices.index, self.equity.prices,
+                      linestyle='solid', marker='', label='Asset Price', linewidth=1.5, color='k')
+
+        ax1.plot_date(buy_trades.index, buy_trades, label='Buy Trades', color='g')
+        ax1.plot_date(sell_trades.index, sell_trades, label='Sell Trades', color='r')
+
+        ax2.plot_date(self.macd_line.index, self.macd_line,
+                      linestyle='solid', marker='', label='MACD', linewidth=1.5, color='b')
+
+        ax2.plot_date(self.sig_line.index, self.sig_line,
+                      linestyle='solid', marker='', label='EMA(MACD)', linewidth=1.5, color='m')
+
+        ax1.legend()
+        ax2.legend()
+        ax1.set_title('MACD Strategy Trades')
+        fig.set_figheight(6)
+        fig.set_figwidth(10)
+        plt.show()
+
+
 if __name__ == '__main__':
-    tesla = Equity('AAPL', '2021-1-1', '2022-1-1')
-    first_strat = TradingSMA(tesla, 5, 20, 0.03)
-    print(first_strat.pnl(show=True))
+    tesla = Equity('TSLA', '2021-1-1', '2022-1-1')
+    #first_strat = TradingSMA(tesla, 5, 20, 0.03)
+    #print(first_strat.pnl(show=True))
     #first_strat.trade_plot()
 
 
-    print('')
-    print('DONE')
+    #test = TradingMACD(tesla)
+    #test.trade_plot()
+
+
 
 
 # To Add:
-# Close out position @ end
 # Channel Breakout, MACD, RSI
-
+# Trading Costs
+# Clean up PNL plots
