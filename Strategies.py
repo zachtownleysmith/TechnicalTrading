@@ -18,6 +18,10 @@ def remove_dup_trades(signals):
     return output
 
 
+def count_instances(series, target):
+    temp = series[series == target]
+    return len(temp)
+
 class Equity:
     def __init__(self, ticker, start, end):
         self.ticker = ticker
@@ -203,18 +207,117 @@ class TradingMACD:
         plt.show()
 
 
+class TradingRSI:
+    def __init__(self, equity, smoothing=14, up_thresh=70, lr_thresh=30):
+        self.equity = equity
+        self.smoothing = smoothing
+        self.up_thresh = up_thresh
+        self.lr_thresh = lr_thresh
+
+    def ind_gen(self):
+        diffs = np.sign(self.equity.prices - self.equity.prices.shift(1))
+        n_up = diffs.mask(diffs == -1, 0)
+        n_up = n_up.rolling(self.smoothing).sum()
+        n_up = n_up.ewm(span=self.smoothing, adjust=False).mean()
+
+        n_down = diffs.mask(diffs == 1, 0)
+        n_down = n_down.mask(n_down == -1, 1)
+        n_down = n_down.rolling(self.smoothing).sum()
+        n_down = n_down.ewm(span=self.smoothing, adjust=False).mean()
+
+        r_s = n_up/n_down
+        indicator = 100 * r_s / (1 + r_s)
+
+        return indicator
+
+    def buy_sell(self):
+        buy_sell = self.ind_gen()
+        buy_sell = buy_sell.mask(buy_sell < self.lr_thresh, 1)
+        buy_sell = buy_sell.mask(buy_sell > self.up_thresh, -1)
+        buy_sell = buy_sell.mask((buy_sell <= self.up_thresh) & (buy_sell >= self.lr_thresh), 0)
+        buy_sell = remove_dup_trades(buy_sell)
+        buy_sell = buy_sell.shift(1)
+
+        return buy_sell
+
+    def pnl(self, show=True):
+
+        trades = self.buy_sell()
+        output = trades.multiply(self.equity.prices.multiply(-1))
+        output = output.mask(output.isna(), 0)
+        output = output.cumsum()
+
+        # Close out our position at the end of the period
+        final_position = trades.cumsum()[-1] * self.equity.prices[-1]
+        output[-1] = output[-1] + final_position
+
+        if show:
+            plt.style.use('fivethirtyeight')
+            plt.plot_date(output.index, output, linestyle='solid', marker="")
+            plt.title('Profit and Loss')
+            plt.ylabel('Dollars')
+            plt.tight_layout()
+            plt.gcf().autofmt_xdate()
+            plt.show()
+
+        return output[-1]
+
+    def trade_plot(self):
+
+        buy_trades = self.buy_sell()
+        sell_trades = buy_trades
+
+        buy_trades = buy_trades.mask(buy_trades != 1, None)
+        buy_trades = buy_trades.multiply(self.equity.prices)
+
+        sell_trades = sell_trades.mask(sell_trades != -1, None)
+        sell_trades = sell_trades.multiply(self.equity.prices.multiply(-1))
+
+        indicator = self.ind_gen()
+        upper = indicator * 0 + self.up_thresh
+        lower = indicator * 0 + self.lr_thresh
+
+        plt.style.use('fivethirtyeight')
+
+        fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, sharex=True)
+
+        ax1.plot_date(self.equity.prices.index, self.equity.prices,
+                      linestyle='solid', marker='', label='Asset Price', linewidth=1.5, color='k')
+
+        ax1.plot_date(buy_trades.index, buy_trades, label='Buy Trades', color='g')
+        ax1.plot_date(sell_trades.index, sell_trades, label='Sell Trades', color='r')
+
+        ax2.plot_date(indicator.index, indicator,
+                      linestyle='solid', marker='', label='RSI', linewidth=1.5, color='m')
+
+        ax2.plot_date(upper.index, upper,
+                      linestyle='solid', marker='', label='OverBought', linewidth=1.5, color='k')
+
+        ax2.plot_date(lower.index, lower,
+                      linestyle='solid', marker='', label='OverSold', linewidth=1.5, color='k')
+
+        ax1.legend()
+        ax2.legend()
+        ax1.set_title('RSI Strategy Trades')
+        fig.set_figheight(6)
+        fig.set_figwidth(10)
+        plt.show()
+
+
 if __name__ == '__main__':
-    tesla = Equity('TSLA', '2021-1-1', '2022-1-1')
+    tesla = Equity('VZ', '2021-1-1', '2022-1-1')
     #first_strat = TradingSMA(tesla, 5, 20, 0.03)
     #print(first_strat.pnl(show=True))
     #first_strat.trade_plot()
 
 
     #test = TradingMACD(tesla)
+    #print(test.pnl())
     #test.trade_plot()
 
-
-
+    #test = TradingRSI(tesla)
+    #test.trade_plot()
+    #print(test.pnl(show=False))
 
 # To Add:
 # Channel Breakout, MACD, RSI
