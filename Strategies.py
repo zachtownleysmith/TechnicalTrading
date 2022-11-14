@@ -66,6 +66,10 @@ class TradingSMA:
         output = output.mask(output.isna(), 0)
         output = output.cumsum()
 
+        # Close out our position at the end of the period
+        final_position = trades.cumsum()[-1] * self.equity.prices[-1]
+        output[-1] = output[-1] + final_position
+
         if show:
             plt.style.use('fivethirtyeight')
             plt.plot_date(output.index, output, linestyle='solid', marker="")
@@ -118,10 +122,10 @@ class TradingEMA(TradingSMA):
 
 
 if __name__ == '__main__':
-    tesla = Equity('TSLA', '2021-1-1', '2022-1-1')
+    tesla = Equity('AAPL', '2021-1-1', '2022-1-1')
     first_strat = TradingSMA(tesla, 5, 20, 0.03)
     print(first_strat.pnl(show=True))
-    first_strat.trade_plot()
+    #first_strat.trade_plot()
 
 
     print('')
@@ -129,7 +133,6 @@ if __name__ == '__main__':
 
 
 # To Add:
-# Trading Costs
 # Close out position @ end
 # Channel Breakout, MACD, RSI
 
